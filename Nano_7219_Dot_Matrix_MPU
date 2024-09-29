@@ -1,0 +1,91 @@
+#include <Wire.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <SPI.h>
+
+// Define pins for MAX7219
+#define DIN 11                 // Data In pin
+#define CLK 13                 // Clock pin
+#define CS 3                   // Chip Select pin for MAX7219
+#define NUM_DEVICES 1          // Number of MAX7219 devices
+
+// Create an instance of the MPU6050
+Adafruit_MPU6050 mpu;
+
+// MAX7219 command definitions
+#define MAX7219_NOOP 0x00
+#define MAX7219_DIGIT0 0x01
+#define MAX7219_DIGIT1 0x02
+#define MAX7219_DIGIT2 0x03
+#define MAX7219_DIGIT3 0x04
+#define MAX7219_DIGIT4 0x05
+#define MAX7219_DIGIT5 0x06
+#define MAX7219_DIGIT6 0x07
+#define MAX7219_DIGIT7 0x08
+#define MAX7219_DECODEMODE 0x09
+#define MAX7219_INTENSITY 0x0A
+#define MAX7219_SCANLIMIT 0x0B
+#define MAX7219_SHUTDOWN 0x0C
+#define MAX7219_DISPLAYTEST 0x0F
+
+// Function to send data to MAX7219
+void max7219Send(byte address, byte data) {
+  digitalWrite(CS, LOW); // Begin transmission
+  SPI.transfer(address);
+  SPI.transfer(data);
+  digitalWrite(CS, HIGH); // End transmission
+}
+
+// Function to clear the display
+void max7219Clear() {
+  for (byte i = 0; i < 8; i++) {
+    max7219Send(MAX7219_DIGIT0 + i, 0x00); // Clear all rows
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  // Initialize MPU6050 (I2C on A4 and A5)
+  Wire.begin();
+  if (!mpu.begin()) {
+    Serial.println("MPU6050 initialization failed");
+    while (1); // Halt if MPU6050 fails
+  }
+
+  // Set the accelerometer range
+  mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
+
+  // Set up MAX7219 on SPI
+  SPI.begin(); // Initialize SPI
+  pinMode(CS, OUTPUT); // Set chip select pin as output
+  digitalWrite(CS, HIGH); // Deselect the MAX7219
+
+  // Initialize MAX7219
+  max7219Send(MAX7219_SCANLIMIT, 0x07);  // Show all 8 digits
+  max7219Send(MAX7219_DECODEMODE, 0x00); // Use the matrix without BCD decoding
+  max7219Send(MAX7219_INTENSITY, 0x0F);  // Set brightness (0-15)
+  max7219Send(MAX7219_DISPLAYTEST, 0x00); // Disable display test mode
+  max7219Send(MAX7219_SHUTDOWN, 0x01);   // Wake up the MAX7219
+  max7219Clear(); // Clear the display
+}
+
+void loop() {
+  // Get accelerometer data from MPU6050
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+
+  // Map accelerometer data to 8x8 matrix coordinates
+  int x = map(a.acceleration.x, -2, 2, 0, 7); // Map x-axis acceleration to 0-7
+  int y = map(a.acceleration.y, -2, 2, 0, 7); // Map y-axis acceleration to 0-7
+
+  // Constrain values within matrix boundaries
+  x = constrain(x, 0, 7); // Ensure x is between 0 and 7
+  y = constrain(y, 0, 7); // Ensure y is between 0 and 7
+
+  // Clear the display and update the dot position on MAX7219
+  max7219Clear(); // Clear previous dot
+  max7219Send(MAX7219_DIGIT0 + y, (1 << x)); // Set the dot at the new position
+
+  delay(100); // Adjust for smoother movement
+}
